@@ -1,8 +1,11 @@
 const NUS_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const NUS_RX_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
 const NUS_TX_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+const BATTERY_SERVICE_UUID = 0x180f;
+const BATTERY_LEVEL_UUID = 0x2a19;
 const TURN_REPEAT_MS = 120;
 const RECONNECT_DELAY_MS = 1600;
+const COMPACT_STATUS_MEDIA = '(max-width: 860px)';
 
 const ui = {
   connectButton: document.querySelector('#connectButton'),
@@ -10,6 +13,7 @@ const ui = {
   installButton: document.querySelector('#installButton'),
   unlockButton: document.querySelector('#unlockButton'),
   refreshButton: document.querySelector('#refreshButton'),
+  toggleTelemetryButton: document.querySelector('#toggleTelemetryButton'),
   speedSlider: document.querySelector('#speedSlider'),
   speedValue: document.querySelector('#speedValue'),
   connectionState: document.querySelector('#connectionState'),
@@ -32,6 +36,7 @@ const state = {
   server: null,
   rxChar: null,
   txChar: null,
+  batteryChar: null,
   autoReconnect: true,
   reconnectTimer: null,
   turnTimer: null,
@@ -40,9 +45,14 @@ const state = {
   incoming: '',
   installPrompt: null,
   unlocked: false,
+  telemetryCollapsed: document.body.classList.contains('telemetry-collapsed'),
 };
 
 ui.speedValue.textContent = String(state.selectedSpeed);
+
+function clampSpeed(value) {
+  return Math.max(0, Math.min(255, value));
+}
 
 function setHint(text) {
   ui.hint.textContent = text;
@@ -76,21 +86,46 @@ function updatePresets() {
 }
 
 function updateSpeed(value) {
-  state.selectedSpeed = value;
-  ui.speedSlider.value = String(value);
-  ui.speedValue.textContent = String(value);
+  state.selectedSpeed = clampSpeed(value);
+  ui.speedSlider.value = String(state.selectedSpeed);
+  ui.speedValue.textContent = String(state.selectedSpeed);
   updatePresets();
 }
 
+function setTelemetryCollapsed(collapsed) {
+  state.telemetryCollapsed = collapsed;
+  document.body.classList.toggle('telemetry-collapsed', collapsed);
+  ui.toggleTelemetryButton.textContent = collapsed ? '展开' : '收起';
+  ui.toggleTelemetryButton.setAttribute('aria-expanded', String(!collapsed));
+}
+
+function renderBatteryPercent(percent) {
+  if (!Number.isFinite(percent) || percent < 0) {
+    ui.batteryValue.textContent = 'N/A';
+    return;
+  }
+
+  ui.batteryValue.textContent = `${percent}%`;
+}
+
+function renderBatteryMv(mv) {
+  if (!Number.isFinite(mv) || mv < 0) {
+    ui.batteryMvValue.textContent = 'N/A';
+    return;
+  }
+
+  ui.batteryMvValue.textContent = `${mv} mV`;
+}
+
 function updateTelemetry(panel) {
+  if (panel.type === 'BAS') {
+    renderBatteryPercent(panel.percent);
+    return;
+  }
+
   if (panel.type === 'BT') {
-    if (panel.percent < 0 || panel.mv < 0) {
-      ui.batteryValue.textContent = 'N/A';
-      ui.batteryMvValue.textContent = 'N/A';
-    } else {
-      ui.batteryValue.textContent = `${panel.percent}%`;
-      ui.batteryMvValue.textContent = `${panel.mv} mV`;
-    }
+    renderBatteryPercent(panel.percent);
+    renderBatteryMv(panel.mv);
     return;
   }
 
@@ -111,6 +146,7 @@ function updateTelemetry(panel) {
 
 function parseLine(line) {
   const parts = line.trim().split(',');
+
   if (parts[0] === 'ST' && parts.length >= 5) {
     updateTelemetry({
       type: 'ST',
@@ -119,6 +155,7 @@ function parseLine(line) {
       flapSpeed: Number(parts[3]),
       turnDir: Number(parts[4]),
     });
+    return;
   }
 
   if (parts[0] === 'BT' && parts.length >= 3) {
@@ -127,6 +164,7 @@ function parseLine(line) {
       percent: Number(parts[1]),
       mv: Number(parts[2]),
     });
+    return;
   }
 
   if (parts[0] === 'IM' && parts.length >= 3) {
@@ -143,6 +181,7 @@ function onNotification(event) {
   state.incoming += chunk;
   const lines = state.incoming.split('\n');
   state.incoming = lines.pop() ?? '';
+
   lines.forEach((line) => {
     if (line.trim()) {
       parseLine(line);
@@ -150,25 +189,56 @@ function onNotification(event) {
   });
 }
 
+function onBatteryNotification(event) {
+  const percent = event.target.value.getUint8(0);
+  updateTelemetry({ type: 'BAS', percent });
+}
+
+async function syncBatteryLevel() {
+  if (!state.batteryChar) {
+    return;
+  }
+
+  const value = await state.batteryChar.readValue();
+  updateTelemetry({ type: 'BAS', percent: value.getUint8(0) });
+}
+
 async function writeCommand(command) {
   if (!state.rxChar) {
-    return;
+    throw new Error('尚未连接控制通道');
   }
 
   const payload = new TextEncoder().encode(`${command}\n`);
-  if (typeof state.rxChar.writeValueWithoutResponse === 'function') {
+  const { writeWithoutResponse, write } = state.rxChar.properties;
+
+  if (writeWithoutResponse) {
     await state.rxChar.writeValueWithoutResponse(payload);
     return;
   }
-  await state.rxChar.writeValue(payload);
+
+  if (write) {
+    await state.rxChar.writeValue(payload);
+    return;
+  }
+
+  throw new Error('设备控制特征不可写');
 }
 
 async function syncState() {
-  await writeCommand('Q');
+  const results = await Promise.allSettled([
+    writeCommand('Q'),
+    syncBatteryLevel(),
+  ]);
+
+  const failed = results.find((result) => result.status === 'rejected');
+  if (failed) {
+    throw failed.reason;
+  }
 }
 
 async function applyFlapState() {
-  await writeCommand(`F,${state.selectedDirection},${state.selectedDirection === 0 ? 0 : state.selectedSpeed}`);
+  const speed = state.selectedDirection === 0 ? 0 : state.selectedSpeed;
+  await writeCommand(`F,${state.selectedDirection},${speed}`);
 }
 
 function stopTurnLoop(sendStop = true) {
@@ -218,8 +288,24 @@ function handleDisconnect() {
   state.server = null;
   state.rxChar = null;
   state.txChar = null;
+  state.batteryChar = null;
   setHint(state.autoReconnect ? '连接已断开，等待自动重连。' : '连接已断开。');
   scheduleReconnect();
+}
+
+async function connectBatteryService() {
+  try {
+    const batteryService = await state.server.getPrimaryService(BATTERY_SERVICE_UUID);
+    state.batteryChar = await batteryService.getCharacteristic(BATTERY_LEVEL_UUID);
+    await state.batteryChar.startNotifications();
+    state.batteryChar.removeEventListener('characteristicvaluechanged', onBatteryNotification);
+    state.batteryChar.addEventListener('characteristicvaluechanged', onBatteryNotification);
+    await syncBatteryLevel();
+    return true;
+  } catch (error) {
+    state.batteryChar = null;
+    return false;
+  }
 }
 
 async function connectGatt(allowPicker = true) {
@@ -230,7 +316,7 @@ async function connectGatt(allowPicker = true) {
   if (!state.device && allowPicker) {
     state.device = await navigator.bluetooth.requestDevice({
       filters: [{ namePrefix: 'Morpho' }],
-      optionalServices: [NUS_SERVICE_UUID],
+      optionalServices: [NUS_SERVICE_UUID, BATTERY_SERVICE_UUID],
     });
     state.device.addEventListener('gattserverdisconnected', handleDisconnect);
   }
@@ -241,26 +327,35 @@ async function connectGatt(allowPicker = true) {
 
   window.clearTimeout(state.reconnectTimer);
   state.server = await state.device.gatt.connect();
+
   const service = await state.server.getPrimaryService(NUS_SERVICE_UUID);
   state.rxChar = await service.getCharacteristic(NUS_RX_UUID);
   state.txChar = await service.getCharacteristic(NUS_TX_UUID);
   await state.txChar.startNotifications();
   state.txChar.removeEventListener('characteristicvaluechanged', onNotification);
   state.txChar.addEventListener('characteristicvaluechanged', onNotification);
+
+  const batteryReady = await connectBatteryService();
   setConnected(true);
-  setHint('连接成功，可以开始控制。');
+  setHint(
+    batteryReady
+      ? '连接成功，可以开始控制。'
+      : '连接成功，但设备未暴露标准电池服务，将仅显示 NUS 状态回读。',
+  );
   await syncState();
 }
 
 async function connectOrSync() {
   state.autoReconnect = true;
   updateReconnectState();
+
   try {
     if (state.server?.connected) {
       await syncState();
       setHint('状态已刷新。');
       return;
     }
+
     await connectGatt(true);
   } catch (error) {
     setHint(`连接失败：${error.message}`);
@@ -272,6 +367,7 @@ function stopReconnect() {
   updateReconnectState();
   window.clearTimeout(state.reconnectTimer);
   stopTurnLoop(false);
+
   if (state.device?.gatt?.connected) {
     state.device.gatt.disconnect();
   } else {
@@ -284,13 +380,14 @@ ui.disconnectButton.addEventListener('click', stopReconnect);
 ui.refreshButton.addEventListener('click', () => {
   syncState().catch((error) => setHint(`刷新失败：${error.message}`));
 });
+ui.toggleTelemetryButton.addEventListener('click', () => {
+  setTelemetryCollapsed(!state.telemetryCollapsed);
+});
 
 ui.unlockButton.addEventListener('click', async () => {
   try {
-    const next = state.unlocked ? 'U0' : 'U1';
-    await writeCommand(next);
-    state.unlocked = !state.unlocked;
-    updateLockButton();
+    await writeCommand(state.unlocked ? 'U0' : 'U1');
+    setHint(state.unlocked ? '已发送锁定命令。' : '已发送解锁命令。');
   } catch (error) {
     setHint(`解锁命令失败：${error.message}`);
   }
@@ -300,6 +397,7 @@ ui.dirButtons.forEach((button) => {
   button.addEventListener('click', async () => {
     state.selectedDirection = Number(button.dataset.dir);
     updateDirectionButtons();
+
     try {
       await applyFlapState();
     } catch (error) {
@@ -323,6 +421,7 @@ ui.speedSlider.addEventListener('change', async () => {
 ui.presets.forEach((button) => {
   button.addEventListener('click', async () => {
     updateSpeed(Number(button.dataset.speed));
+
     try {
       await applyFlapState();
     } catch (error) {
@@ -335,11 +434,9 @@ ui.presets.forEach((button) => {
   [ui.turnLeft, -1],
   [ui.turnRight, 1],
 ].forEach(([button, dir]) => {
-  ['pointerdown'].forEach((eventName) => {
-    button.addEventListener(eventName, (event) => {
-      event.preventDefault();
-      startTurnLoop(dir);
-    });
+  button.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    startTurnLoop(dir);
   });
 
   ['pointerup', 'pointercancel', 'pointerleave'].forEach((eventName) => {
@@ -359,6 +456,7 @@ ui.installButton.addEventListener('click', async () => {
   if (!state.installPrompt) {
     return;
   }
+
   await state.installPrompt.prompt();
   state.installPrompt = null;
   ui.installButton.classList.add('hidden');
@@ -372,3 +470,4 @@ updateReconnectState();
 updateLockButton();
 updateDirectionButtons();
 updatePresets();
+setTelemetryCollapsed(window.matchMedia(COMPACT_STATUS_MEDIA).matches);

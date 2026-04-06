@@ -2,6 +2,7 @@
   --bg-top: #f3e8c9;
   --bg-bottom: #7bb6b0;
   --panel: rgba(11, 37, 40, 0.78);
+  --panel-border: rgba(255, 255, 255, 0.16);
   --panel-soft: rgba(255, 250, 241, 0.82);
   --accent: #ff9c35;
   --accent-deep: #dd6f0f;
@@ -23,6 +24,7 @@ body {
   min-height: 100vh;
   font-family: var(--font-ui);
   color: var(--text-dark);
+  overflow-x: hidden;
   background:
     radial-gradient(circle at top left, rgba(255, 255, 255, 0.85), transparent 28%),
     radial-gradient(circle at 85% 18%, rgba(255, 180, 96, 0.5), transparent 24%),
@@ -37,13 +39,12 @@ input {
 .shell {
   width: min(1080px, calc(100vw - 28px));
   margin: 0 auto;
-  padding: 22px 0 36px;
+  padding: 18px 0 36px;
 }
 
 .hero,
 .card,
-.telemetry,
-.status-strip {
+.telemetry {
   backdrop-filter: blur(14px);
   box-shadow: var(--shadow);
 }
@@ -55,6 +56,7 @@ input {
   border-radius: calc(var(--radius) + 8px);
   background: linear-gradient(135deg, rgba(11, 37, 40, 0.88), rgba(26, 62, 67, 0.72));
   color: var(--text-main);
+  min-height: 188px;
 }
 
 .eyebrow {
@@ -122,41 +124,18 @@ input {
   min-height: 52px;
 }
 
-.status-strip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 18px;
-  padding: 14px;
-  border-radius: var(--radius);
-  background: rgba(255, 247, 234, 0.68);
-}
-
-.pill {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 14px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.54);
-}
-
-.pill span,
 .card-title span,
+.telemetry-chip span,
 .telemetry-grid span,
 .hint {
   font-size: 0.9rem;
   opacity: 0.72;
 }
 
-.pill strong {
-  font-size: 1.05rem;
-}
-
 .grid {
   display: grid;
   gap: 18px;
-  margin-top: 18px;
+  margin-top: 22px;
 }
 
 .card {
@@ -234,13 +213,17 @@ input[type="range"] {
 }
 
 .telemetry {
-  position: sticky;
-  bottom: 14px;
-  margin-top: 18px;
-  padding: 18px 20px 20px;
-  border-radius: var(--radius);
-  background: var(--panel);
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: 12px;
+  width: min(320px, calc(100vw - 20px));
+  z-index: 20;
+  padding: 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: 24px;
+  background: rgba(11, 37, 40, 0.84);
   color: var(--text-main);
+  transition: width 0.18s ease, transform 0.18s ease, background 0.18s ease;
 }
 
 .telemetry-head {
@@ -250,6 +233,49 @@ input[type="range"] {
   gap: 12px;
 }
 
+.telemetry-kicker {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.telemetry-head h2 {
+  font-size: 1rem;
+}
+
+.telemetry-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.telemetry-topline {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.telemetry-chip,
+.telemetry-grid div {
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.telemetry-chip strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 1rem;
+}
+
+.telemetry-body {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
 .mini {
   padding: 10px 14px;
 }
@@ -257,27 +283,30 @@ input[type="range"] {
 .telemetry-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin-top: 18px;
-}
-
-.telemetry-grid div {
-  padding: 14px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.08);
+  gap: 10px;
 }
 
 .telemetry-grid strong {
   display: block;
-  margin-top: 8px;
-  font-size: 1.2rem;
+  margin-top: 6px;
+  font-size: 1.05rem;
 }
 
 .hint {
-  margin: 16px 0 0;
+  margin: 0;
+  line-height: 1.45;
 }
 
 .hidden {
+  display: none;
+}
+
+body.telemetry-collapsed .telemetry {
+  width: min(228px, calc(100vw - 20px));
+  background: rgba(11, 37, 40, 0.9);
+}
+
+body.telemetry-collapsed .telemetry-body {
   display: none;
 }
 
@@ -290,6 +319,10 @@ button:hover {
 }
 
 @media (min-width: 860px) {
+  .shell {
+    padding-right: 340px;
+  }
+
   .grid {
     grid-template-columns: 1fr 1.35fr 1fr;
     align-items: start;
@@ -306,11 +339,31 @@ button:hover {
     padding: 12px 0 24px;
   }
 
-  .status-strip,
-  .segmented,
-  .quick-row,
-  .turn-row,
   .telemetry-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero {
+    min-height: auto;
+    padding: 20px;
+  }
+
+  .quick-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .telemetry {
+    top: auto;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    right: 9px;
+    width: min(284px, calc(100vw - 18px));
+  }
+
+  body.telemetry-collapsed .telemetry {
+    width: min(208px, calc(100vw - 18px));
+  }
+
+  .telemetry-topline {
     grid-template-columns: 1fr;
   }
 }

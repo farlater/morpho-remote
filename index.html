@@ -8,7 +8,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./styles.css">
 </head>
-<body>
+<body class="telemetry-collapsed">
   <main class="shell">
     <section class="hero">
       <div>
@@ -20,21 +20,6 @@
         <button id="connectButton" class="primary">连接设备</button>
         <button id="disconnectButton" class="ghost">取消重连</button>
         <button id="installButton" class="ghost hidden">安装 APP</button>
-      </div>
-    </section>
-
-    <section class="status-strip">
-      <div class="pill">
-        <span>连接</span>
-        <strong id="connectionState">未连接</strong>
-      </div>
-      <div class="pill">
-        <span>重连</span>
-        <strong id="reconnectState">自动</strong>
-      </div>
-      <div class="pill">
-        <span>电机</span>
-        <strong id="lockState">锁定</strong>
       </div>
     </section>
 
@@ -87,30 +72,52 @@
       </article>
     </section>
 
-    <aside class="telemetry">
+    <aside id="statusDock" class="telemetry">
       <div class="telemetry-head">
-        <h2>机体状态</h2>
-        <button id="refreshButton" class="mini">刷新</button>
-      </div>
-      <div class="telemetry-grid">
         <div>
+          <p class="telemetry-kicker">机体状态</p>
+          <h2>状态面板</h2>
+        </div>
+        <div class="telemetry-actions">
+          <button id="refreshButton" class="mini">刷新</button>
+          <button id="toggleTelemetryButton" class="mini" aria-controls="telemetryBody" aria-expanded="false">展开</button>
+        </div>
+      </div>
+      <div class="telemetry-topline">
+        <div class="telemetry-chip">
+          <span>连接</span>
+          <strong id="connectionState">未连接</strong>
+        </div>
+        <div class="telemetry-chip">
           <span>电池</span>
           <strong id="batteryValue">--</strong>
         </div>
-        <div>
-          <span>电压</span>
-          <strong id="batteryMvValue">--</strong>
-        </div>
-        <div>
-          <span>Accel Z</span>
-          <strong id="accelValue">--</strong>
-        </div>
-        <div>
-          <span>Gyro Y</span>
-          <strong id="gyroValue">--</strong>
-        </div>
       </div>
-      <p id="hint" class="hint">首次连接请使用安卓 Chrome/Edge、打开蓝牙，并通过 HTTPS 或本机受信任环境访问此页面。</p>
+      <div id="telemetryBody" class="telemetry-body">
+        <div class="telemetry-grid">
+          <div>
+            <span>重连</span>
+            <strong id="reconnectState">自动</strong>
+          </div>
+          <div>
+            <span>电机</span>
+            <strong id="lockState">锁定</strong>
+          </div>
+          <div>
+            <span>电压</span>
+            <strong id="batteryMvValue">--</strong>
+          </div>
+          <div>
+            <span>Accel Z</span>
+            <strong id="accelValue">--</strong>
+          </div>
+          <div>
+            <span>Gyro Y</span>
+            <strong id="gyroValue">--</strong>
+          </div>
+        </div>
+        <p id="hint" class="hint">首次连接请使用安卓 Chrome/Edge、打开蓝牙，并通过 HTTPS 或本机受信任环境访问此页面。</p>
+      </div>
     </aside>
   </main>
 
