@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f2a2c">
+  <title>Morpho 遥控器</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Morpho Butterfly Remote</p>
+        <h1>扑翼双电机遥控</h1>
+        <p class="subtitle">解锁后，扑翼速度与方向为自锁状态。转向电机采用按住有效，松开即停。</p>
+      </div>
+      <div class="hero-actions">
+        <button id="connectButton" class="primary">连接设备</button>
+        <button id="disconnectButton" class="ghost">取消重连</button>
+        <button id="installButton" class="ghost hidden">安装 APP</button>
+      </div>
+    </section>
+
+    <section class="status-strip">
+      <div class="pill">
+        <span>连接</span>
+        <strong id="connectionState">未连接</strong>
+      </div>
+      <div class="pill">
+        <span>重连</span>
+        <strong id="reconnectState">自动</strong>
+      </div>
+      <div class="pill">
+        <span>电机</span>
+        <strong id="lockState">锁定</strong>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="card unlock-card">
+        <div class="card-title">
+          <h2>总解锁</h2>
+          <span>同时控制两路电机使能</span>
+        </div>
+        <button id="unlockButton" class="arm">发送解锁</button>
+      </article>
+
+      <article class="card flap-card">
+        <div class="card-title">
+          <h2>扑翼电机</h2>
+          <span>速度和方向自锁，除非发送新的命令</span>
+        </div>
+
+        <div class="segmented">
+          <button class="dir-button" data-dir="-1">反转</button>
+          <button class="dir-button active" data-dir="0">停止</button>
+          <button class="dir-button" data-dir="1">正转</button>
+        </div>
+
+        <label class="slider-wrap" for="speedSlider">
+          <span>速度</span>
+          <strong id="speedValue">160</strong>
+        </label>
+        <input id="speedSlider" type="range" min="0" max="255" step="1" value="160">
+
+        <div class="quick-row">
+          <button class="preset" data-speed="96">低速</button>
+          <button class="preset" data-speed="160">巡航</button>
+          <button class="preset" data-speed="220">高速</button>
+          <button class="preset" data-speed="255">全速</button>
+        </div>
+      </article>
+
+      <article class="card turn-card">
+        <div class="card-title">
+          <h2>转向电机</h2>
+          <span>长按发送，断线或超时自动停转</span>
+        </div>
+
+        <div class="turn-row">
+          <button id="turnLeft" class="turn left">左转</button>
+          <button id="turnStop" class="turn stop">停止</button>
+          <button id="turnRight" class="turn right">右转</button>
+        </div>
+      </article>
+    </section>
+
+    <aside class="telemetry">
+      <div class="telemetry-head">
+        <h2>机体状态</h2>
+        <button id="refreshButton" class="mini">刷新</button>
+      </div>
+      <div class="telemetry-grid">
+        <div>
+          <span>电池</span>
+          <strong id="batteryValue">--</strong>
+        </div>
+        <div>
+          <span>电压</span>
+          <strong id="batteryMvValue">--</strong>
+        </div>
+        <div>
+          <span>Accel Z</span>
+          <strong id="accelValue">--</strong>
+        </div>
+        <div>
+          <span>Gyro Y</span>
+          <strong id="gyroValue">--</strong>
+        </div>
+      </div>
+      <p id="hint" class="hint">首次连接请使用安卓 Chrome/Edge、打开蓝牙，并通过 HTTPS 或本机受信任环境访问此页面。</p>
+    </aside>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
