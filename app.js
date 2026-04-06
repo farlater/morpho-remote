@@ -6,6 +6,8 @@ const BATTERY_LEVEL_UUID = 0x2a19;
 const TURN_REPEAT_MS = 120;
 const RECONNECT_DELAY_MS = 1600;
 const COMPACT_STATUS_MEDIA = '(max-width: 860px)';
+const FLAP_UNLOCK_BOOST_SPEED = 255;
+const FLAP_RAMP_STEP_MS = 70;
 
 const ui = {
   connectButton: document.querySelector('#connectButton'),
@@ -40,12 +42,18 @@ const state = {
   autoReconnect: true,
   reconnectTimer: null,
   turnTimer: null,
+  flapRampTimer: null,
   selectedDirection: 0,
   selectedSpeed: Number(ui.speedSlider.value),
+  commandedDirection: 0,
+  commandedSpeed: 0,
+  deviceDirection: 0,
+  deviceSpeed: 0,
   incoming: '',
   installPrompt: null,
   unlocked: false,
   telemetryCollapsed: document.body.classList.contains('telemetry-collapsed'),
+  hasLocalFlapSelection: false,
 };
 
 ui.speedValue.textContent = String(state.selectedSpeed);
@@ -137,10 +145,18 @@ function updateTelemetry(panel) {
 
   if (panel.type === 'ST') {
     state.unlocked = panel.unlocked === 1;
-    state.selectedDirection = panel.flapDir;
-    updateSpeed(panel.flapSpeed);
+    state.deviceDirection = panel.flapDir;
+    state.deviceSpeed = panel.flapSpeed;
+    state.commandedDirection = panel.flapDir;
+    state.commandedSpeed = panel.flapSpeed;
+
+    if (!state.hasLocalFlapSelection) {
+      state.selectedDirection = panel.flapDir;
+      updateSpeed(panel.flapSpeed);
+      updateDirectionButtons();
+    }
+
     updateLockButton();
-    updateDirectionButtons();
   }
 }
 
@@ -239,6 +255,66 @@ async function syncState() {
 async function applyFlapState() {
   const speed = state.selectedDirection === 0 ? 0 : state.selectedSpeed;
   await writeCommand(`F,${state.selectedDirection},${speed}`);
+  state.commandedDirection = state.selectedDirection;
+  state.commandedSpeed = speed;
+}
+
+function stopFlapRamp() {
+  if (state.flapRampTimer) {
+    window.clearInterval(state.flapRampTimer);
+    state.flapRampTimer = null;
+  }
+}
+
+async function sendFlapCommand(direction, speed) {
+  const safeSpeed = direction === 0 ? 0 : clampSpeed(speed);
+  await writeCommand(`F,${direction},${safeSpeed}`);
+  state.commandedDirection = direction;
+  state.commandedSpeed = safeSpeed;
+}
+
+function rampFlapSpeedToTarget(targetSpeed) {
+  stopFlapRamp();
+
+  if (!state.unlocked || state.selectedDirection === 0) {
+    return;
+  }
+
+  const target = clampSpeed(targetSpeed);
+  if (state.commandedDirection !== state.selectedDirection) {
+    sendFlapCommand(state.selectedDirection, target).catch((error) => {
+      setHint(`扑翼速度命令失败：${error.message}`);
+    });
+    return;
+  }
+
+  if (state.commandedSpeed === target) {
+    return;
+  }
+
+  state.flapRampTimer = window.setInterval(() => {
+    const delta = target - state.commandedSpeed;
+
+    if (delta === 0) {
+      stopFlapRamp();
+      return;
+    }
+
+    const step = Math.max(1, Math.ceil(Math.abs(delta) / 6));
+    const next = state.commandedSpeed + Math.sign(delta) * step;
+    const boundedNext = Math.sign(delta) > 0
+      ? Math.min(next, target)
+      : Math.max(next, target);
+
+    sendFlapCommand(state.selectedDirection, boundedNext).catch((error) => {
+      stopFlapRamp();
+      setHint(`扑翼速度命令失败：${error.message}`);
+    });
+
+    if (boundedNext === target) {
+      stopFlapRamp();
+    }
+  }, FLAP_RAMP_STEP_MS);
 }
 
 function stopTurnLoop(sendStop = true) {
@@ -285,6 +361,7 @@ function scheduleReconnect() {
 function handleDisconnect() {
   setConnected(false);
   stopTurnLoop(false);
+  stopFlapRamp();
   state.server = null;
   state.rxChar = null;
   state.txChar = null;
@@ -386,8 +463,29 @@ ui.toggleTelemetryButton.addEventListener('click', () => {
 
 ui.unlockButton.addEventListener('click', async () => {
   try {
-    await writeCommand(state.unlocked ? 'U0' : 'U1');
-    setHint(state.unlocked ? '已发送锁定命令。' : '已发送解锁命令。');
+    if (state.unlocked) {
+      stopFlapRamp();
+      await writeCommand('U0');
+      state.unlocked = false;
+      state.commandedDirection = 0;
+      state.commandedSpeed = 0;
+      updateLockButton();
+      setHint('已发送锁定命令。方向和目标速度会保留，等待下次解锁。');
+      return;
+    }
+
+    await writeCommand('U1');
+    state.unlocked = true;
+    updateLockButton();
+
+    if (state.selectedDirection !== 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, 80));
+      await sendFlapCommand(state.selectedDirection, FLAP_UNLOCK_BOOST_SPEED);
+      setHint('已解锁，并按当前方向以满速启动。现在可以调速。');
+      return;
+    }
+
+    setHint('已发送解锁命令。');
   } catch (error) {
     setHint(`解锁命令失败：${error.message}`);
   }
@@ -396,10 +494,29 @@ ui.unlockButton.addEventListener('click', async () => {
 ui.dirButtons.forEach((button) => {
   button.addEventListener('click', async () => {
     state.selectedDirection = Number(button.dataset.dir);
+    state.hasLocalFlapSelection = true;
     updateDirectionButtons();
 
     try {
-      await applyFlapState();
+      stopFlapRamp();
+
+      if (!state.unlocked) {
+        setHint(
+          state.selectedDirection === 0
+            ? '已将扑翼方向预设为停止。'
+            : '方向已锁存。解锁后会按当前方向先满速启动。',
+        );
+        return;
+      }
+
+      if (state.selectedDirection === 0) {
+        await sendFlapCommand(0, 0);
+        setHint('已发送扑翼停止命令。');
+        return;
+      }
+
+      await sendFlapCommand(state.selectedDirection, FLAP_UNLOCK_BOOST_SPEED);
+      setHint('方向已切换，并先以满速建立转动。');
     } catch (error) {
       setHint(`扑翼方向命令失败：${error.message}`);
     }
@@ -407,12 +524,20 @@ ui.dirButtons.forEach((button) => {
 });
 
 ui.speedSlider.addEventListener('input', (event) => {
+  state.hasLocalFlapSelection = true;
   updateSpeed(Number(event.target.value));
 });
 
 ui.speedSlider.addEventListener('change', async () => {
   try {
-    await applyFlapState();
+    state.hasLocalFlapSelection = true;
+
+    if (!state.unlocked || state.selectedDirection === 0) {
+      setHint('速度已预设。解锁并进入正转或反转后，再逐步趋近这个目标速度。');
+      return;
+    }
+
+    rampFlapSpeedToTarget(state.selectedSpeed);
   } catch (error) {
     setHint(`扑翼速度命令失败：${error.message}`);
   }
@@ -420,10 +545,16 @@ ui.speedSlider.addEventListener('change', async () => {
 
 ui.presets.forEach((button) => {
   button.addEventListener('click', async () => {
+    state.hasLocalFlapSelection = true;
     updateSpeed(Number(button.dataset.speed));
 
     try {
-      await applyFlapState();
+      if (!state.unlocked || state.selectedDirection === 0) {
+        setHint('速度预设已保存。解锁并启动后会按新目标调速。');
+        return;
+      }
+
+      rampFlapSpeedToTarget(state.selectedSpeed);
     } catch (error) {
       setHint(`预设速度命令失败：${error.message}`);
     }
