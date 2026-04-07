@@ -477,15 +477,11 @@ ui.unlockButton.addEventListener('click', async () => {
     await writeCommand('U1');
     state.unlocked = true;
     updateLockButton();
-
-    if (state.selectedDirection !== 0) {
-      await new Promise((resolve) => window.setTimeout(resolve, 80));
-      await sendFlapCommand(state.selectedDirection, FLAP_UNLOCK_BOOST_SPEED);
-      setHint('已解锁，并按当前方向以满速启动。现在可以调速。');
-      return;
-    }
-
-    setHint('已发送解锁命令。');
+    setHint(
+      state.selectedDirection === 0
+        ? '已发送解锁命令。'
+        : '已解锁。当前方向已保留，需手动发送方向或调速命令才会启动。',
+    );
   } catch (error) {
     setHint(`解锁命令失败：${error.message}`);
   }
