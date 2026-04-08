@@ -500,7 +500,7 @@ ui.dirButtons.forEach((button) => {
         setHint(
           state.selectedDirection === 0
             ? '已将扑翼方向预设为停止。'
-            : '方向已锁存。解锁后会按当前方向先满速启动。',
+            : '方向已锁存。', 
         );
         return;
       }
@@ -511,8 +511,8 @@ ui.dirButtons.forEach((button) => {
         return;
       }
 
-      await sendFlapCommand(state.selectedDirection, FLAP_UNLOCK_BOOST_SPEED);
-      setHint('方向已切换，并先以满速建立转动。');
+      await sendFlapCommand(state.selectedDirection, state.selectedSpeed); 
+      setHint('方向已切换，并按设定速度转动。'); 
     } catch (error) {
       setHint(`扑翼方向命令失败：${error.message}`);
     }
